@@ -55,11 +55,13 @@ public class ApacheFetcher extends BasicApacheFetcher {
     }
 
     public FetcherResponse fetch(List<URI> uriList) throws LookupException, FileNotFoundException {
+
+        if (uriList == null || uriList.isEmpty())
+            throw new IllegalArgumentException("Provided URI list is null or empty");
+
         FetcherResponse fetcherResponse = null;
         Exception exceptionObj = null;
 
-        if (uriList == null)
-            throw new LookupException("Unable to lookup requested url");
 
         for (URI uri : uriList) {
             try {
@@ -71,10 +73,6 @@ public class ApacheFetcher extends BasicApacheFetcher {
             } catch (FileNotFoundException | LookupException e) {
                 exceptionObj = e;
             }
-        }
-
-        if (exceptionObj instanceof FileNotFoundException) {
-            throw new FileNotFoundException();
         }
 
         if (exceptionObj instanceof LookupException) {
@@ -106,8 +104,7 @@ public class ApacheFetcher extends BasicApacheFetcher {
             }
         } catch (SocketTimeoutException | SocketException | UnknownHostException e) {
             throw new LookupException(String.format("Unable to fetch '%s'", uri), e);
-        } catch (LookupException | FileNotFoundException e) {
-            throw e;
+
         } catch (Exception e) {
             throw new LookupException(e.getMessage(), e);
         }

@@ -20,12 +20,15 @@
 package network.oxalis.vefa.peppol.lookup.util;
 
 import com.google.common.io.BaseEncoding;
+import network.oxalis.vefa.peppol.common.lang.PeppolRuntimeException;
 import network.oxalis.vefa.peppol.common.model.ParticipantIdentifier;
 import network.oxalis.vefa.peppol.lookup.api.LookupException;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.Security;
 
 public class DynamicHostnameGenerator {
@@ -64,21 +67,18 @@ public class DynamicHostnameGenerator {
         this.encoding = encoding;
     }
 
-    public String generate(ParticipantIdentifier participantIdentifier) throws LookupException {
-        String receiverHash;
-
+    public String generate(ParticipantIdentifier participantIdentifier) throws PeppolRuntimeException {
         try {
             // Create digest based on participant identifier.
             MessageDigest md = MessageDigest.getInstance(digestAlgorithm, BouncyCastleProvider.PROVIDER_NAME);
             byte[] digest = md.digest(participantIdentifier.getIdentifier().getBytes(StandardCharsets.UTF_8));
 
             // Create hex of digest.
-            receiverHash = encoding.encode(digest).toLowerCase();
-        } catch (Exception e) {
-            throw new LookupException(e.getMessage(), e);
-        }
+            String receiverHash = encoding.encode(digest).toLowerCase();
 
-        return String.format("%s%s.%s.%s",
-                prefix, receiverHash, participantIdentifier.getScheme().getIdentifier(), hostname);
+            return String.format("%s%s.%s.%s", prefix, receiverHash, participantIdentifier.getScheme().getIdentifier(), hostname);
+        } catch (NoSuchAlgorithmException | NoSuchProviderException e) {
+            throw new PeppolRuntimeException("Error occurred generating hostname for " + participantIdentifier, e);
+        }
     }
 }

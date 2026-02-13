@@ -461,7 +461,7 @@ public class LookupClientTest {
         assertNotNull(serviceMetadata);
     }
 
-    @Test(expectedExceptions = NotFoundException.class)
+    @Test(expectedExceptions = LookupException.class)
     public void noSmp() throws PeppolException {
         LookupClient client =
                 LookupClientBuilder.forMode(testMode)
@@ -472,7 +472,7 @@ public class LookupClientTest {
         System.out.println(dti);
     }
 
-    @Test(expectedExceptions = NotFoundException.class)
+    @Test(expectedExceptions = LookupException.class)
     public void noSmpApache() throws PeppolException {
         LookupClient client =
                 LookupClientBuilder.forMode(testMode)
@@ -483,7 +483,7 @@ public class LookupClientTest {
         client.getDocumentIdentifiers(ParticipantIdentifier.of("9908:no-smp"));
     }
 
-    @Test(expectedExceptions = NotFoundException.class)
+    @Test(expectedExceptions = LookupException.class)
     public void noSml() throws PeppolException {
         LookupClient client =
                 LookupClientBuilder.forMode(testMode)

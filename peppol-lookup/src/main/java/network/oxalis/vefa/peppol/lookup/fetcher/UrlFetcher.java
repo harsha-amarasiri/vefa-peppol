@@ -40,11 +40,13 @@ public class UrlFetcher extends AbstractFetcher {
 
     @Override
     public FetcherResponse fetch(List<URI> uriList) throws LookupException, FileNotFoundException {
+
+        if (uriList == null || uriList.isEmpty())
+            throw new IllegalArgumentException("Provided URI list is null or empty");
+
         FetcherResponse fetcherResponse = null;
         Exception exceptionObj = null;
 
-        if (uriList == null)
-            throw new LookupException("Unable to lookup requested url");
 
         for (URI uri : uriList) {
             try {

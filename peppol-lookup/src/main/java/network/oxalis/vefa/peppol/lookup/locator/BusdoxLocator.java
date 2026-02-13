@@ -19,16 +19,18 @@
 
 package network.oxalis.vefa.peppol.lookup.locator;
 
+import lombok.extern.slf4j.Slf4j;
+import network.oxalis.vefa.peppol.common.lang.PeppolException;
+import network.oxalis.vefa.peppol.common.lang.PeppolInfrastructureException;
+import network.oxalis.vefa.peppol.common.lang.PeppolResourceException;
 import network.oxalis.vefa.peppol.common.model.ParticipantIdentifier;
 import network.oxalis.vefa.peppol.lookup.api.LookupException;
 import network.oxalis.vefa.peppol.lookup.api.NotFoundException;
 import network.oxalis.vefa.peppol.lookup.util.DynamicHostnameGenerator;
 import network.oxalis.vefa.peppol.mode.Mode;
 import org.apache.commons.lang3.StringUtils;
-import org.xbill.DNS.ExtendedResolver;
-import org.xbill.DNS.Lookup;
-import org.xbill.DNS.SimpleResolver;
-import org.xbill.DNS.TextParseException;
+import org.xbill.DNS.*;
+import org.xbill.DNS.tools.lookup;
 
 import java.net.InetAddress;
 import java.net.URI;
@@ -37,6 +39,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 public class BusdoxLocator extends AbstractLocator {
 
     private final long timeout;
@@ -98,63 +101,132 @@ public class BusdoxLocator extends AbstractLocator {
         // Create hostname for participant identifier.
         String hostname = hostnameGenerator.generate(participantIdentifier);
 
-        ExtendedResolver extendedResolver;
+
         try {
-            if(enablePublicDNS) {
-                extendedResolver = CustomExtendedDNSResolver.createExtendedResolver(customDNSServers, timeout, maxRetries);
-            } else {
-                extendedResolver = new ExtendedResolver();
-                try {
-                    if (StringUtils.isNotBlank(hostname)) {
-                        extendedResolver.addResolver(new SimpleResolver(hostname));
-                    }
-                } catch (final UnknownHostException ex) {
-                    //Primary DNS lookup fail, now try with default resolver
-                }
-                extendedResolver.addResolver (Lookup.getDefaultResolver ());
-            }
-            extendedResolver.setRetries(maxRetries);
-            extendedResolver.setTimeout(Duration.ofSeconds(timeout));
+            ExtendedResolver extendedResolver = getExtendedResolver(hostname);
 
-            final Lookup lookup = new Lookup(hostname);
-            lookup.setResolver(extendedResolver);
+            LookupResult result = fetchRecords(hostname, extendedResolver);
 
-            int retryCountLeft = maxRetries;
-            // Retry, The lookup may fail due to a network error. Repeating the lookup might be helpful
-            do {
-                lookup.run();
-                --retryCountLeft;
-            } while (lookup.getResult() == Lookup.TRY_AGAIN && retryCountLeft >= 0);
-
-            // Retry with TCP as well
-            if (lookup.getResult() == Lookup.TRY_AGAIN) {
-                extendedResolver.setTCP(true);
-
-                retryCountLeft = maxRetries;
-                do {
-                    lookup.run();
-                    --retryCountLeft;
-                } while (lookup.getResult() == Lookup.TRY_AGAIN && retryCountLeft >= 0);
-            }
-
-            if (lookup.getResult() != Lookup.SUCCESSFUL) {
-                switch (lookup.getResult()) {
-                    case Lookup.HOST_NOT_FOUND: // The host does not exist
-                        throw new NotFoundException(String.format("Identifier '%s' is not registered in SML. The host '%s' does not exist", participantIdentifier.getIdentifier(), hostname));
-                    case Lookup.TYPE_NOT_FOUND: // The host exists, but has no records associated with the queried type
-                        throw new NotFoundException(String.format("Identifier '%s' is not registered in SML. The Host '%s' exists, but has no records associated with the queried type", participantIdentifier.getIdentifier(), hostname));
-                    case Lookup.TRY_AGAIN: // The lookup failed due to a network error. Repeating the lookup may be helpful.
-                        throw new LookupException(String.format("Error when looking up identifier '%s' in SML due to network error. Retry after sometime... DNS-Lookup-Err: %s", participantIdentifier.getIdentifier(), lookup.getErrorString()));
-                    case Lookup.UNRECOVERABLE: // The lookup failed due to a data or server error. Repeating the lookup would not be helpful.
-                        throw new LookupException(String.format("Error when looking up identifier '%s' in SML due to a data or server error. Repeating the lookup immediately would not be helpful. DNS-Lookup-Err: %s", participantIdentifier.getIdentifier(), lookup.getErrorString()));
-                    default:
-                        throw new LookupException(String.format("Error when looking up identifier '%s' in SML. DNS-Lookup-Err: %s", participantIdentifier.getIdentifier(), lookup.getErrorString()));
-                }
+            if (result.naptrLookup.getResult() != Lookup.SUCCESSFUL) {
+                handleDnsFailure(participantIdentifier, hostname, result.naptrLookup);
             }
         } catch (TextParseException e) {
-            throw new LookupException(e.getMessage(), e);
+            throw new LookupException("Error parsing DNS hostname for Busdox lookup:" + e.getMessage(), e);
+        } catch (PeppolException e) {
+            throw new LookupException("Unexpected exception during Busdox lookup: " + e.getMessage(), e);
+        }
+        return URI.create(String.format("http://%s", hostname));
+
+    }
+
+    private ExtendedResolver getExtendedResolver(String hostname) {
+        ExtendedResolver extendedResolver;
+        if (enablePublicDNS) {
+            extendedResolver = CustomExtendedDNSResolver.createExtendedResolver(customDNSServers, timeout, maxRetries);
+        } else {
+            extendedResolver = new ExtendedResolver();
+            try {
+                if (StringUtils.isNotBlank(hostname)) {
+                    extendedResolver.addResolver(new SimpleResolver(hostname));
+                }
+            } catch (final UnknownHostException ex) {
+                //Primary DNS lookup fail, now try with default resolver
+            }
+            extendedResolver.addResolver(Lookup.getDefaultResolver());
+        }
+        extendedResolver.setRetries(maxRetries);
+        extendedResolver.setTimeout(Duration.ofSeconds(timeout));
+        return extendedResolver;
+    }
+
+    private static class LookupResult {
+        public final Lookup naptrLookup;
+        public final Record[] dnsRecords;
+
+        public LookupResult(Lookup naptrLookup, Record[] dnsRecords) {
+            this.naptrLookup = naptrLookup;
+            this.dnsRecords = dnsRecords;
         }
 
-        return URI.create(String.format("http://%s", hostname));
+        public boolean hasRecords() {
+            return dnsRecords != null && dnsRecords.length > 0;
+        }
+    }
+
+    private LookupResult fetchRecords(String hostname, ExtendedResolver extendedResolver) throws TextParseException {
+        final Lookup naptrLookup = new Lookup(hostname, Type.NAPTR);
+        naptrLookup.setResolver(extendedResolver);
+
+        Record[] dnsRecords;
+        int retryCountLeft = maxRetries;
+        // Retry, the NAPTR lookup may fail due to a network error. Repeating the lookup might be helpful
+        do {
+            dnsRecords = naptrLookup.run();
+            --retryCountLeft;
+        } while (naptrLookup.getResult() == Lookup.TRY_AGAIN && retryCountLeft >= 0);
+
+        // Retry with TCP as well
+        if (naptrLookup.getResult() == Lookup.TRY_AGAIN) {
+            extendedResolver.setTCP(true);
+
+            retryCountLeft = maxRetries;
+            do {
+                dnsRecords = naptrLookup.run();
+                --retryCountLeft;
+            } while (naptrLookup.getResult() == Lookup.TRY_AGAIN && retryCountLeft >= 0);
+        }
+        return new LookupResult(naptrLookup, dnsRecords);
+    }
+
+
+    private void handleDnsFailure(ParticipantIdentifier participantIdentifier, String hostname, Lookup naptrLookup) throws PeppolException {
+
+        int lookupResult = naptrLookup.getResult();
+        String errorString = naptrLookup.getErrorString();
+
+        log.debug("DNS lookup failed with result code {} for hostname '{}': {}", lookupResult, hostname, errorString);
+
+        switch (lookupResult) {
+            case Lookup.HOST_NOT_FOUND:
+                // Participant not registered in SML - permanent resource failure
+                log.info("Participant '{}' not registered in SML: hostname '{}' not found (HOST_NOT_FOUND)",
+                        participantIdentifier.getIdentifier(), hostname);
+                throw new PeppolResourceException(String.format(
+                        "Participant '%s' is not registered in PEPPOL SML. DNS hostname '%s' does not exist.",
+                        participantIdentifier.getIdentifier(), hostname));
+
+            case Lookup.TYPE_NOT_FOUND:
+                // Participant not registered - DNS host exists but no NAPTR records
+                log.info("Participant '{}' not registered in SML: hostname '{}' has no records (TYPE_NOT_FOUND)",
+                        participantIdentifier.getIdentifier(), hostname);
+                throw new PeppolResourceException(String.format(
+                        "Participant '%s' is not registered in PEPPOL SML. DNS hostname '%s' exists but has no records.",
+                        participantIdentifier.getIdentifier(), hostname));
+
+            case Lookup.TRY_AGAIN:
+                // Transient DNS infrastructure failure - retryable
+                log.warn("DNS infrastructure failure for participant '{}' at hostname '{}': {} (TRY_AGAIN)",
+                        participantIdentifier.getIdentifier(), hostname, errorString);
+                throw new PeppolInfrastructureException(String.format(
+                        "SML DNS lookup failed due to network error. DNS hostname: '%s', Error: %s", hostname,
+                        errorString != null ? errorString : "Unknown network error"));
+
+            case Lookup.UNRECOVERABLE:
+                // DNS/SML configuration error - indicates infrastructure problem
+                log.error("DNS unrecoverable error for participant '{}' at hostname '{}': {} (UNRECOVERABLE)",
+                        participantIdentifier.getIdentifier(), hostname, errorString);
+                throw new PeppolInfrastructureException(String.format(
+                        "SML DNS lookup failed due to unrecoverable DNS error. " +
+                                "DNS hostname: '%s', Error: %s. This indicates an SML configuration issue.", hostname,
+                        errorString != null ? errorString : "Unrecoverable DNS error"));
+
+            default:
+                // Unexpected DNS error - treated as infrastructure issue
+                log.error("Unexpected DNS error for participant '{}' at hostname '{}': result={}, error={}",
+                        participantIdentifier.getIdentifier(), hostname, lookupResult, errorString);
+                throw new PeppolInfrastructureException(String.format(
+                        "Unexpected DNS error. DNS hostname: '%s', Result code: %d, Error: %s", hostname, lookupResult,
+                        errorString != null ? errorString : "Unknown error"));
+        }
     }
 }

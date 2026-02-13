@@ -20,9 +20,12 @@
 package network.oxalis.vefa.peppol.lookup.locator;
 
 import com.google.common.io.BaseEncoding;
+import lombok.extern.slf4j.Slf4j;
+import network.oxalis.vefa.peppol.common.lang.PeppolException;
+import network.oxalis.vefa.peppol.common.lang.PeppolInfrastructureException;
+import network.oxalis.vefa.peppol.common.lang.PeppolResourceException;
 import network.oxalis.vefa.peppol.common.model.ParticipantIdentifier;
 import network.oxalis.vefa.peppol.lookup.api.LookupException;
-import network.oxalis.vefa.peppol.lookup.api.NotFoundException;
 import network.oxalis.vefa.peppol.lookup.util.DynamicHostnameGenerator;
 import network.oxalis.vefa.peppol.lookup.util.EncodingUtils;
 import network.oxalis.vefa.peppol.mode.Mode;
@@ -49,6 +52,7 @@ import java.util.regex.Pattern;
  *
  * @see <a href="http://docs.oasis-open.org/bdxr/BDX-Location/v1.0/BDX-Location-v1.0.html">Specification</a>
  */
+@Slf4j
 public class BdxlLocator extends AbstractLocator {
 
     private final long timeout;
@@ -120,8 +124,8 @@ public class BdxlLocator extends AbstractLocator {
      * @param prefix          Value attached in front of calculated hash.
      * @param hostname        Hostname used as base for lookup.
      * @param digestAlgorithm Algorithm used for generation of hostname.
-     * @param timeout Lookup timeout
-     * @param maxRetries Maximum number of retries
+     * @param timeout         Lookup timeout
+     * @param maxRetries      Maximum number of retries
      * @param enablePublicDNS Enable custom DNS lookup
      */
     public BdxlLocator(String prefix, String hostname, String digestAlgorithm, long timeout, int maxRetries, boolean enablePublicDNS) {
@@ -135,8 +139,8 @@ public class BdxlLocator extends AbstractLocator {
      * @param hostname        Hostname used as base for lookup.
      * @param digestAlgorithm Algorithm used for generation of hostname.
      * @param encoding        Encoding of hash for hostname.
-     * @param timeout Lookup timeout
-     * @param maxRetries Maximum number of retries
+     * @param timeout         Lookup timeout
+     * @param maxRetries      Maximum number of retries
      * @param enablePublicDNS Enable custom DNS lookup
      */
     public BdxlLocator(String prefix, String hostname, String digestAlgorithm, BaseEncoding encoding, long timeout, int maxRetries, boolean enablePublicDNS) {
@@ -151,82 +155,123 @@ public class BdxlLocator extends AbstractLocator {
         // Create hostname for participant identifier.
         String hostname = hostnameGenerator.generate(participantIdentifier).replaceAll("=*", "");
 
-        ExtendedResolver extendedResolver;
         try {
-            if(enablePublicDNS) {
-                extendedResolver = CustomExtendedDNSResolver.createExtendedResolver(customDNSServers, timeout, maxRetries);
-            } else {
-                extendedResolver = new ExtendedResolver();
-                try {
-                    if (StringUtils.isNotBlank(hostname)) {
-                        extendedResolver.addResolver(new SimpleResolver(hostname));
-                    }
-                } catch (final UnknownHostException ex) {
-                    //Primary DNS lookup fail, now try with default resolver
-                }
-                extendedResolver.addResolver (Lookup.getDefaultResolver ());
-            }
-            extendedResolver.setRetries(maxRetries);
-            extendedResolver.setTimeout(Duration.ofSeconds(timeout));
 
-            // Fetch all records of type NAPTR registered on hostname.
-            final Lookup naptrLookup = new Lookup(hostname, Type.NAPTR);
-            naptrLookup.setResolver(extendedResolver);
 
-            Record[] records;
-            int retryCountLeft = maxRetries;
-            // Retry, the NAPTR lookup may fail due to a network error. Repeating the lookup might be helpful
-            do {
-                records = naptrLookup.run();
-                --retryCountLeft;
-            } while (naptrLookup.getResult() == Lookup.TRY_AGAIN && retryCountLeft >= 0);
+            ExtendedResolver extendedResolver = getExtendedResolver(hostname);
 
-            // Retry with TCP as well
-            if (naptrLookup.getResult() == Lookup.TRY_AGAIN) {
-                extendedResolver.setTCP(true);
+            // Fetch all records of the type NAPTR registered on the hostname.
+            LookupResult lookupResult = fetchRecords(hostname, extendedResolver);
 
-                retryCountLeft = maxRetries;
-                do {
-                    records = naptrLookup.run();
-                    --retryCountLeft;
-                } while (naptrLookup.getResult() == Lookup.TRY_AGAIN && retryCountLeft >= 0);
+            // Handle DNS lookup result
+            if (lookupResult.naptrLookup.getResult() != Lookup.SUCCESSFUL) {
+                handleDnsFailure(participantIdentifier, hostname, lookupResult.naptrLookup);
             }
 
-            if (naptrLookup.getResult() != Lookup.SUCCESSFUL) {
-                switch (naptrLookup.getResult()) {
-                    case Lookup.HOST_NOT_FOUND: // The host does not exist
-                        throw new NotFoundException(String.format("Identifier '%s' is not registered in SML. The host '%s' does not exist", participantIdentifier.getIdentifier(), hostname));
-                    case Lookup.TYPE_NOT_FOUND: // The host exists, but has no records associated with the queried type
-                        throw new NotFoundException(String.format("Identifier '%s' is not registered in SML. The Host '%s' exists, but has no records associated with the queried type", participantIdentifier.getIdentifier(), hostname));
-                    case Lookup.TRY_AGAIN: // The lookup failed due to a network error. Repeating the lookup may be helpful.
-                        throw new LookupException(String.format("Error when looking up identifier '%s' in SML due to network error. Retry after sometime... DNS-Lookup-Err: %s", participantIdentifier.getIdentifier(), naptrLookup.getErrorString()));
-                    case Lookup.UNRECOVERABLE: // The lookup failed due to a data or server error. Repeating the lookup would not be helpful.
-                        throw new LookupException(String.format("Error when looking up identifier '%s' in SML due to a data or server error. Repeating the lookup immediately would not be helpful. DNS-Lookup-Err: %s", participantIdentifier.getIdentifier(), naptrLookup.getErrorString()));
-                    default:
-                        throw new LookupException(String.format("Error when looking up identifier '%s' in SML. DNS-Lookup-Err: %s", participantIdentifier.getIdentifier(), naptrLookup.getErrorString()));
-                }
+            log.debug("DNS lookup successful for hostname '{}', processing {} records", hostname, lookupResult.dnsRecords != null ? lookupResult.dnsRecords.length : 0);
+
+            if (!lookupResult.hasRecords()) {
+                log.info("Participant '{}' not registered in SML: hostname '{}' has no NAPTR records (TYPE_NOT_FOUND)", participantIdentifier.getIdentifier(), hostname);
+                throw new PeppolResourceException(String.format(
+                        "Participant '%s' is not registered in PEPPOL SML. DNS hostname '%s' exists but has no NAPTR records found.", participantIdentifier.getIdentifier(), hostname));
             }
 
             // Loop records found.
-            for (Record record : records) {
-                // Simple cast.
-                NAPTRRecord naptrRecord = (NAPTRRecord) record;
+            return filterSMPRecords(participantIdentifier, lookupResult, hostname);
 
-                // Handle only those having "Meta:SMP" as service.
-                if ("Meta:SMP".equals(naptrRecord.getService()) && "U".equalsIgnoreCase(naptrRecord.getFlags())) {
 
-                    // Create URI and return.
-                    String result = handleRegex(naptrRecord.getRegexp(), hostname);
-                    if (result != null)
-                        return URI.create(result);
-                }
-            }
         } catch (TextParseException e) {
-            throw new LookupException("Error when handling DNS lookup for BDXL.", e);
+                throw new LookupException("Error parsing DNS hostname for BDXL lookup.", e);
+        } catch (PeppolException e) {
+            throw new LookupException("Error during DNS lookup for BDXL", e);
         }
 
-        throw new NotFoundException("Record for SMP not found in SML.");
     }
+
+    private static URI filterSMPRecords(ParticipantIdentifier participantIdentifier, LookupResult lookupResult, String hostname) throws PeppolResourceException {
+        for (Record dnsRecord : lookupResult.dnsRecords) {
+            // Simple cast.
+            NAPTRRecord naptrRecord = (NAPTRRecord) dnsRecord;
+
+            // Handle only those having "Meta:SMP" as service.
+            if ("Meta:SMP".equals(naptrRecord.getService()) && "U".equalsIgnoreCase(naptrRecord.getFlags())) {
+
+                // Create URI and return.
+                String result = handleRegex(naptrRecord.getRegexp(), hostname);
+                if (result != null) {
+                    log.trace("Found SMP location for participant '{}': {}", participantIdentifier.getIdentifier(), result);
+                    return URI.create(result);
+                }
+
+            } else {
+                log.debug("Skipping NAPTR record with service '{}' and flags '{}'", naptrRecord.getService(), naptrRecord.getFlags());
+            }
+        }
+
+        throw new PeppolResourceException(String.format(
+                "Participant '%s' has no SMP location published in SML. DNS lookup succeeded but no Meta:SMP NAPTR record found at hostname '%s'",
+                participantIdentifier.getIdentifier(), hostname));
+    }
+
+    private LookupResult fetchRecords(String hostname, ExtendedResolver extendedResolver) throws TextParseException {
+        final Lookup naptrLookup = new Lookup(hostname, Type.NAPTR);
+        naptrLookup.setResolver(extendedResolver);
+
+        Record[] dnsRecords;
+        int retryCountLeft = maxRetries;
+        // Retry, the NAPTR lookup may fail due to a network error. Repeating the lookup might be helpful
+        do {
+            dnsRecords = naptrLookup.run();
+            --retryCountLeft;
+        } while (naptrLookup.getResult() == Lookup.TRY_AGAIN && retryCountLeft >= 0);
+
+        // Retry with TCP as well
+        if (naptrLookup.getResult() == Lookup.TRY_AGAIN) {
+            extendedResolver.setTCP(true);
+
+            retryCountLeft = maxRetries;
+            do {
+                dnsRecords = naptrLookup.run();
+                --retryCountLeft;
+            } while (naptrLookup.getResult() == Lookup.TRY_AGAIN && retryCountLeft >= 0);
+        }
+        return new LookupResult(naptrLookup, dnsRecords);
+    }
+
+    private static class LookupResult {
+        public final Lookup naptrLookup;
+        public final Record[] dnsRecords;
+
+        public LookupResult(Lookup naptrLookup, Record[] dnsRecords) {
+            this.naptrLookup = naptrLookup;
+            this.dnsRecords = dnsRecords;
+        }
+
+        public boolean hasRecords() {
+            return dnsRecords != null && dnsRecords.length > 0;
+        }
+    }
+
+    private ExtendedResolver getExtendedResolver(String hostname) {
+        ExtendedResolver extendedResolver;
+        if (enablePublicDNS) {
+            extendedResolver = CustomExtendedDNSResolver.createExtendedResolver(customDNSServers, timeout, maxRetries);
+        } else {
+            extendedResolver = new ExtendedResolver();
+            try {
+                if (StringUtils.isNotBlank(hostname)) {
+                    extendedResolver.addResolver(new SimpleResolver(hostname));
+                }
+            } catch (final UnknownHostException ex) {
+                //Primary DNS lookup fail, now try with default resolver
+            }
+            extendedResolver.addResolver(Lookup.getDefaultResolver());
+        }
+        extendedResolver.setRetries(maxRetries);
+        extendedResolver.setTimeout(Duration.ofSeconds(timeout));
+        return extendedResolver;
+    }
+
 
     public static String handleRegex(String naptrRegex, String hostname) {
         String[] regexp = naptrRegex.split("!");
@@ -244,4 +289,56 @@ public class BdxlLocator extends AbstractLocator {
         // No match
         return null;
     }
+
+    private void handleDnsFailure(ParticipantIdentifier participantIdentifier, String hostname, Lookup naptrLookup) throws PeppolException {
+
+        int lookupResult = naptrLookup.getResult();
+        String errorString = naptrLookup.getErrorString();
+
+        log.debug("DNS lookup failed with result code {} for hostname '{}': {}", lookupResult, hostname, errorString);
+
+        switch (lookupResult) {
+            case Lookup.HOST_NOT_FOUND:
+                // Participant not registered in SML - permanent resource failure
+                log.info("Participant '{}' not registered in SML: hostname '{}' not found (HOST_NOT_FOUND)",
+                        participantIdentifier.getIdentifier(), hostname);
+                throw new PeppolResourceException(String.format(
+                        "Participant '%s' is not registered in PEPPOL SML. DNS hostname '%s' does not exist.",
+                        participantIdentifier.getIdentifier(), hostname));
+
+            case Lookup.TYPE_NOT_FOUND:
+                // Participant not registered - DNS host exists but no NAPTR records
+                log.info("Participant '{}' not registered in SML: hostname '{}' has no NAPTR records (TYPE_NOT_FOUND)",
+                        participantIdentifier.getIdentifier(), hostname);
+                throw new PeppolResourceException(String.format(
+                        "Participant '%s' is not registered in PEPPOL SML. DNS hostname '%s' exists but has no NAPTR records.",
+                        participantIdentifier.getIdentifier(), hostname));
+
+            case Lookup.TRY_AGAIN:
+                // Transient DNS infrastructure failure - retryable
+                log.warn("DNS infrastructure failure for participant '{}' at hostname '{}': {} (TRY_AGAIN)",
+                        participantIdentifier.getIdentifier(), hostname, errorString);
+                throw new PeppolInfrastructureException(String.format(
+                        "SML DNS lookup failed due to network error. DNS hostname: '%s', Error: %s", hostname,
+                        errorString != null ? errorString : "Unknown network error"));
+
+            case Lookup.UNRECOVERABLE:
+                // DNS/SML configuration error - indicates infrastructure problem
+                log.error("DNS unrecoverable error for participant '{}' at hostname '{}': {} (UNRECOVERABLE)",
+                        participantIdentifier.getIdentifier(), hostname, errorString);
+                throw new PeppolInfrastructureException(String.format(
+                        "SML DNS lookup failed due to unrecoverable DNS error. " +
+                                "DNS hostname: '%s', Error: %s. This indicates an SML configuration issue.", hostname,
+                        errorString != null ? errorString : "Unrecoverable DNS error"));
+
+            default:
+                // Unexpected DNS error - treated as infrastructure issue
+                log.error("Unexpected DNS error for participant '{}' at hostname '{}': result={}, error={}",
+                        participantIdentifier.getIdentifier(), hostname, lookupResult, errorString);
+                throw new PeppolInfrastructureException(String.format(
+                        "Unexpected DNS error. DNS hostname: '%s', Result code: %d, Error: %s", hostname, lookupResult,
+                        errorString != null ? errorString : "Unknown error"));
+        }
+    }
+
 }

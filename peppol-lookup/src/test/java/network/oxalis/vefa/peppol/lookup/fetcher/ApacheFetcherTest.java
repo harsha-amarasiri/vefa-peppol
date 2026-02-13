@@ -54,7 +54,7 @@ public class ApacheFetcherTest {
         fetcher.fetch(uriList);
     }
 
-    @Test(expectedExceptions = LookupException.class)
+    @Test(expectedExceptions = IllegalArgumentException.class)
     public void simpleNullPointer() throws LookupException, FileNotFoundException {
         fetcher.fetch(null);
     }

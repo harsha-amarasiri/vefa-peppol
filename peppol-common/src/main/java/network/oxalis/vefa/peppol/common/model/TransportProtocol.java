@@ -20,6 +20,7 @@
 package network.oxalis.vefa.peppol.common.model;
 
 import network.oxalis.vefa.peppol.common.lang.PeppolException;
+import network.oxalis.vefa.peppol.common.lang.PeppolRuntimeException;
 
 import java.io.Serializable;
 import java.util.regex.Pattern;
