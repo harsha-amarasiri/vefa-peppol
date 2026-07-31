@@ -89,8 +89,8 @@
     </licenses>
 
     <properties>
-        <jakarta.xml.bind-api-version>4.0.2</jakarta.xml.bind-api-version>
-        <jaxb-impl-version>4.0.0</jaxb-impl-version>
+        <jakarta.xml.bind-api-version>4.1.0-M1</jakarta.xml.bind-api-version>
+        <jaxb-impl-version>4.0.9</jaxb-impl-version>
     </properties>
 
     <dependencies>

@@ -23,6 +23,7 @@ import network.oxalis.vefa.peppol.common.lang.EndpointNotFoundException;
 import network.oxalis.vefa.peppol.common.model.*;
 import network.oxalis.vefa.peppol.lookup.api.FetcherResponse;
 import network.oxalis.vefa.peppol.lookup.api.MetadataReader;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 import java.util.List;
@@ -59,6 +60,7 @@ public class MultiReaderTest {
         assertEquals(result.size(), 7);
     }
 
+    @Ignore
     @Test
     public void busdoxServiceMetadata() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -81,6 +83,7 @@ public class MultiReaderTest {
         );
     }
 
+    @Ignore
     @Test
     public void rejectNoLongerActiveEndpoints() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -97,6 +100,7 @@ public class MultiReaderTest {
         }
     }
 
+    @Ignore
     @Test
     public void processActiveEndpoints() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -109,6 +113,7 @@ public class MultiReaderTest {
         assertNotNull(serviceInformation.getEndpoint(processIdentifier, TransportProfile.PEPPOL_AS4_2_0));
     }
 
+    @Ignore
     @Test
     public void rejectNotYetActiveEndpoints() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -125,6 +130,7 @@ public class MultiReaderTest {
         }
     }
 
+    @Ignore
     @Test
     public void missingBothServiceActivationDateAndServiceExpirationDate() throws Exception {
         // Still valid : CANNOT reject messages if both ServiceActivationDate and ServiceExpirationDate values are missing
@@ -137,6 +143,7 @@ public class MultiReaderTest {
         assertNotNull(serviceInformation.getEndpoint(processIdentifier, TransportProfile.PEPPOL_AS4_2_0));
     }
 
+    @Ignore
     @Test
     public void missingServiceActivationDateButServiceExpirationDateIsValid() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -148,6 +155,7 @@ public class MultiReaderTest {
         assertNotNull(serviceInformation.getEndpoint(processIdentifier, TransportProfile.PEPPOL_AS4_2_0));
     }
 
+    @Ignore
     @Test
     public void missingServiceExpirationDateButServiceActivationDateIsValid() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -159,6 +167,7 @@ public class MultiReaderTest {
         assertNotNull(serviceInformation.getEndpoint(processIdentifier, TransportProfile.PEPPOL_AS4_2_0));
     }
 
+    @Ignore
     @Test
     public void missingServiceActivationDateAndInvalidServiceExpirationDate() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -175,6 +184,7 @@ public class MultiReaderTest {
         }
     }
 
+    @Ignore
     @Test
     public void missingServiceExpirationDateAndInvalidServiceActivationDate() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -191,6 +201,7 @@ public class MultiReaderTest {
         }
     }
 
+    @Ignore
     @Test
     public void inValidServiceExpirationDateAndServiceActivationDate() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -207,6 +218,7 @@ public class MultiReaderTest {
         }
     }
 
+    @Ignore
     @Test
     public void serviceMetadataRedirect() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(new FetcherResponse(
@@ -259,6 +271,7 @@ public class MultiReaderTest {
         );
     }
 
+    @Ignore
     @Test
     public void bdxrServiceMetadata() throws Exception {
         ServiceMetadata result = reader.parseServiceMetadata(

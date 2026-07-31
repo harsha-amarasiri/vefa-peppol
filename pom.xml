@@ -93,25 +93,25 @@
 
     <properties>
         <java.encoding>UTF-8</java.encoding>
-        <java.version>11</java.version>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <testng.version>7.11.0</testng.version>
-        <mockito-core.version>5.17.0</mockito-core.version>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <testng.version>7.12.0</testng.version>
+        <mockito-core.version>5.23.0</mockito-core.version>
         <slf4j.version>2.0.17</slf4j.version>
-        <lombok-version>1.18.38</lombok-version>
+        <lombok-version>1.18.46</lombok-version>
         <metainf-services.version>1.11</metainf-services.version>
         <vefa-peppol.version>4.5.1-SNAPSHOT</vefa-peppol.version>
         <commons-certvalidator.version>4.7.0</commons-certvalidator.version>
         <peppol-lib.version>2.5.0</peppol-lib.version>
-        <httpclient.version>5.4.4</httpclient.version>
-        <dnsjava.version>3.6.3</dnsjava.version>
-        <guava.version>33.4.8-jre</guava.version>
-        <typesafe-config.version>1.4.3</typesafe-config.version>
+        <httpclient.version>5.6.3</httpclient.version>
+        <dnsjava.version>3.6.5</dnsjava.version>
+        <guava.version>33.6.0-jre</guava.version>
+        <typesafe-config.version>1.4.9</typesafe-config.version>
         <jakarta.mail.version>2.0.2</jakarta.mail.version>
-        <jakarta.servlet-api.version>6.0.0</jakarta.servlet-api.version>
-        <commons-codec.version>1.18.0</commons-codec.version>
-        <commons-lang3.version>3.18.0</commons-lang3.version>
+        <jakarta.servlet-api.version>6.2.0-M2</jakarta.servlet-api.version>
+        <commons-codec.version>1.22.1</commons-codec.version>
+        <commons-lang3.version>3.20.0</commons-lang3.version>
         <wiremock.version>3.0.1</wiremock.version>
     </properties>
 
@@ -356,12 +356,12 @@
                         <dependency>
                             <groupId>org.apache.maven.scm</groupId>
                             <artifactId>maven-scm-provider-gitexe</artifactId>
-                            <version>1.13.0</version>
+                            <version>2.2.1</version>
                         </dependency>
                         <dependency>
                             <groupId>org.apache.maven.scm</groupId>
                             <artifactId>maven-scm-api</artifactId>
-                            <version>1.13.0</version>
+                            <version>2.2.1</version>
                         </dependency>
                     </dependencies>
                 </plugin>

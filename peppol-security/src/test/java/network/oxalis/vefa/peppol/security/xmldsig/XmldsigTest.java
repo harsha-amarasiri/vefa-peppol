@@ -57,7 +57,7 @@ public class XmldsigTest {
     @Test
     public void simple() throws Exception {
         ByteArrayOutputStream generatedStream = new ByteArrayOutputStream();
-        XmldsigSigner.SHA1().sign(DomUtils.parse(getClass().getResourceAsStream("/xmldsig-test-input.xml")),
+        XmldsigSigner.SHA256().sign(DomUtils.parse(getClass().getResourceAsStream("/xmldsig-test-input.xml")),
                 privateKeyEntry, new StreamResult(generatedStream));
 
         ByteArrayOutputStream expectedStream = new ByteArrayOutputStream();
@@ -115,7 +115,7 @@ public class XmldsigTest {
         Document node = (Document) domResult.getNode();
         Element documentElement = node.getDocumentElement();
         DOMResult signedResult = new DOMResult();
-        XmldsigSigner.SHA1().sign(documentElement, privateKeyEntry, signedResult);
+        XmldsigSigner.SHA256().sign(documentElement, privateKeyEntry, signedResult);
 
         // Verify the signature from the signed DOM document
         Document signedDocument = (Document) signedResult.getNode();

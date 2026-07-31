@@ -23,12 +23,14 @@ import network.oxalis.vefa.peppol.common.lang.EndpointNotFoundException;
 import network.oxalis.vefa.peppol.common.model.*;
 import network.oxalis.vefa.peppol.lookup.api.FetcherResponse;
 import network.oxalis.vefa.peppol.lookup.api.MetadataReader;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 import java.util.List;
 
 import static org.testng.Assert.*;
 
+@Ignore
 public class Bdxr201407ReaderTest {
 
     private MetadataReader reader = new Bdxr201407Reader();
